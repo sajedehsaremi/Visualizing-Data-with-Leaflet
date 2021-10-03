@@ -1,92 +1,106 @@
-// Store our API endpoint as queryUrl.
-var queryUrl = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_day.geojson";
-
-// Perform a GET request to the query URL/
-d3.json(queryUrl).then(function (data) {
-
-  // Define a function that we want to run once for each feature in the features array.
-  // Give each feature a popup that describes the place and time of the earthquake.
-  function bindpopuptomarker(feature, layer) {
-    layer.bindPopup(`<h3>${feature.properties.place}</h3><hr><p>${new Date(feature.properties.time)}</p>`);
-  }
-  function generatecolor(earthquakedepth) {
-    if (earthquakedepth > 100) {
-      return "#60397f"
-    }
-    if (earthquakedepth > 80) {
-      return "#734498"
-    }
-    if (earthquakedepth > 60) {
-      return "#864fb2"
-    }
-    if (earthquakedepth > 40) {
-      return "#9a5acb"
-    }
-    if (earthquakedepth > 20) {
-      return "#ad66e5"
-    }
-
-  }
-
-  function generateearthquakestyle(feature, layer) {
-    console.log(feature)
-    return {
-      color: generatecolor(feature.geometry.coordinates[2])
-    }
-  }
-
-  function generatemarker (feature, latlong){
-    return L.circleMarker(latlong)
-  }
-  // Create a GeoJSON layer that contains the features array on the earthquakeData object.
-  // Run the onEachFeature function once for each piece of data in the array.
-  var earthquakes = L.geoJSON(data.features, {
-    onEachFeature: bindpopuptomarker,
-    style: generateearthquakestyle,
-    pointToLayer: generatemarker
+// Creating the map object
+var myMap = L.map("map", {
+    center: [40, 0],
+    zoom: 2.3
   });
   
-  // Send our earthquakes layer to the createMap function/
-  createMap(earthquakes);
-
-});
-
-function createMap(earthquakes) {
-
-  // Create the base layers.
-  var street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  })
-
-  var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-    attribution: 'Map data: &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, <a href="http://viewfinderpanoramas.org">SRTM</a> | Map style: &copy; <a href="https://opentopomap.org">OpenTopoMap</a> (<a href="https://creativecommons.org/licenses/by-sa/3.0/">CC-BY-SA</a>)'
-  });
-
-  // Create a baseMaps object.
-  var baseMaps = {
-    "Street Map": street,
-    "Topographic Map": topo
-  };
-
-  // Create an overlay object to hold our overlay.
-  var overlayMaps = {
-    "Earthquakes": earthquakes
-  };
-
-  // Create our map, giving it the streetmap and earthquakes layers to display on load.
-  var myMap = L.map("map", {
-    center: [
-      0, 0
-    ],
-    zoom: 2,
-    layers: [street, earthquakes]
-  });
-
-  // Create a layer control.
-  // Pass it our baseMaps and overlayMaps.
-  // Add the layer control to the map.
-  L.control.layers(baseMaps, overlayMaps, {
-    collapsed: false
+  // Adding the tile layer
+  var tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
   }).addTo(myMap);
 
+  // Use this link to get the GeoJSON data.
+var link = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson";
+
+// Return varied shade depending on earthquake depth
+function chooseColor(depth){
+ // console.log("depth: ");
+ // console.log(depth);
+  switch(true){
+    case depth > 80:
+      return "#993300";
+    case depth > 60:
+      return "#ff3300";
+    case depth > 40:
+      return "#ff6600";
+    case depth > 20:
+      return "#ff6666";
+    case depth > 10:
+      return "#ff9999";
+    default:
+      return "#ffcccc";
+
+  }
 }
+
+// Larger magnitude returns larger marker radius
+function chooseRadius(m){
+  // console.log("Mag");
+  // console.log(m);
+  if (m == 0){
+    var mag = 1;
+    return mag;
+  }
+  var mag = m * 3.75;
+  return mag;
+}
+
+
+// Getting our GeoJSON data
+d3.json(link).then(function(data) {
+  // Creating a GeoJSON layer with the retrieved data
+  L.geoJson(data, {
+
+    // Add circle marker
+    // https://stackoverflow.com/questions/25364072/how-to-use-circle-markers-with-leaflet-tilelayer-geojson
+    pointToLayer: function(features, coords){
+      return L.circleMarker(coords);
+    },
+
+    // Style the marker based on magnitude and depth of earthquake
+    style: function(f){
+    
+      return {
+      opacity: 0.6,
+      fillOpacity: 1,
+      fillColor: chooseColor(f.geometry.coordinates[2]),
+      color: "#000000",
+      radius: chooseRadius(f.properties.mag),
+      stroke: true,
+      weight: 0.5
+      };
+    },
+
+    // Offer additional quake info when marker is clicked
+    onEachFeature: function(features, l){
+      l.bindPopup("Located at: " + features.properties.place + "<br>Magnitude: " + features.properties.mag + "<br>Alert: " + features.properties.alert);
+    }
+  }).addTo(myMap);
+  
+
+
+  // Legend
+  var legend = L.control({
+    position: "bottomright"
+  });
+
+  legend.onAdd = function() {
+    let depthrange = [0, 10, 20, 40, 60, 80];
+    let colors = ["#ffcccc", "#ff9999", "#ff6666", "#ff6600","#ff3300", "#993300"];
+    var div = L.DomUtil.create("div", "legend");
+
+    // Insert depth range colors into legend HTML
+    for (var i = 0; i<depthrange.length -1 ; i++) {
+      div.innerHTML +=
+      "<i style='background: " + colors[i] + "'></i> " +
+      depthrange[i] + "&ndash;"+ depthrange[i + 1]  + "<br>" ;
+    }
+    div.innerHTML += "<i style='background: " + colors[depthrange.length-1] + "'></i> " +
+    depthrange[depthrange.length-1] + "+";
+    return div;
+   
+  };
+
+  legend.addTo(myMap)
+
+});
