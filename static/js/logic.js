@@ -1,106 +1,129 @@
-// Creating the map object
-var myMap = L.map("map", {
-    center: [40, 0],
-    zoom: 2.3
+// Store our API endpoint as queryUrl.
+let init = ()=> {
+  // Perform a GET request to the query URL/
+  d3.json(queryUrl).then(function (data) {
+    // Once we get a response, send the data.features object to the createFeatures function.
+    createFeatures(data.features);
   });
-  
-  // Adding the tile layer
-  var tile = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-  }).addTo(myMap);
+};
 
-  // Use this link to get the GeoJSON data.
-var link = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/significant_month.geojson";
+let queryUrl = earthquakeJsonPath7days
 
-// Return varied shade depending on earthquake depth
-function chooseColor(depth){
- // console.log("depth: ");
- // console.log(depth);
-  switch(true){
-    case depth > 80:
-      return "#993300";
-    case depth > 60:
-      return "#ff3300";
-    case depth > 40:
-      return "#ff6600";
-    case depth > 20:
-      return "#ff6666";
-    case depth > 10:
-      return "#ff9999";
-    default:
-      return "#ffcccc";
+let circleInfo = (magnitude, alt) => {
+    return {
+        radius: radiusSize(magnitude),
+        fillColor: colorInfo(alt),
+        fillOpacity: 1,
+        stroke: false
+    };
+};
 
-  }
+let radiusSize = (magnitude)=> {
+    return Math.pow(magnitude,2)*500
+};
+
+let colorInfo = (alt) => {
+    if (alt <= 5) {
+        return '#FFCDD2';
+    } else if (alt <= 12) {
+        return '#E57373';
+    } else if (alt <=18) {
+        return '#F44336'
+    } else if (alt <=24 ) {
+        return '#D32F2F'
+    } else if (alt <=30 ) {
+        return '#FF5252'
+    } else {
+        return '#D50000'
+    }
 }
 
-// Larger magnitude returns larger marker radius
-function chooseRadius(m){
-  // console.log("Mag");
-  // console.log(m);
-  if (m == 0){
-    var mag = 1;
-    return mag;
-  }
-  var mag = m * 3.75;
-  return mag;
-}
+let createFeatures = (earthquakeData) => {
 
+  // Define a function that we want to run once for each feature in the features array.
+  // Give each feature a popup that describes the place and time of the earthquake.
 
-// Getting our GeoJSON data
-d3.json(link).then(function(data) {
-  // Creating a GeoJSON layer with the retrieved data
-  L.geoJson(data, {
-
-    // Add circle marker
-    // https://stackoverflow.com/questions/25364072/how-to-use-circle-markers-with-leaflet-tilelayer-geojson
-    pointToLayer: function(features, coords){
-      return L.circleMarker(coords);
+  // Create a GeoJSON layer that contains the features array on the earthquakeData object.
+  // Run the onEachFeature function once for each piece of data in the array.
+  let earthquakes = L.geoJSON(earthquakeData, {
+    onEachFeature: (feature,layer) => {
+       layer.bindPopup( `<h3>${feature.properties.place}</h3>
+        <hr>
+        <p>Magnitude: ${feature.properties.mag}
+        | Depth: ${feature.geometry.coordinates[2]}
+        </p>
+        
+        `)
+        
     },
-
-    // Style the marker based on magnitude and depth of earthquake
-    style: function(f){
-    
-      return {
-      opacity: 0.6,
-      fillOpacity: 1,
-      fillColor: chooseColor(f.geometry.coordinates[2]),
-      color: "#000000",
-      radius: chooseRadius(f.properties.mag),
-      stroke: true,
-      weight: 0.5
-      };
-    },
-
-    // Offer additional quake info when marker is clicked
-    onEachFeature: function(features, l){
-      l.bindPopup("Located at: " + features.properties.place + "<br>Magnitude: " + features.properties.mag + "<br>Alert: " + features.properties.alert);
+    pointToLayer: (feature, latlng) => {
+       return new  L.circle(latlng, circleInfo(feature.properties.mag, latlng.alt))
     }
-  }).addTo(myMap);
-  
-
-
-  // Legend
-  var legend = L.control({
-    position: "bottomright"
   });
 
-  legend.onAdd = function() {
-    let depthrange = [0, 10, 20, 40, 60, 80];
-    let colors = ["#ffcccc", "#ff9999", "#ff6666", "#ff6600","#ff3300", "#993300"];
-    var div = L.DomUtil.create("div", "legend");
+  // Send our earthquakes layer to the createMap function/
+  createMap(earthquakes);
+}
 
-    // Insert depth range colors into legend HTML
-    for (var i = 0; i<depthrange.length -1 ; i++) {
-      div.innerHTML +=
-      "<i style='background: " + colors[i] + "'></i> " +
-      depthrange[i] + "&ndash;"+ depthrange[i + 1]  + "<br>" ;
-    }
-    div.innerHTML += "<i style='background: " + colors[depthrange.length-1] + "'></i> " +
-    depthrange[depthrange.length-1] + "+";
-    return div;
-   
+let createMap = (earthquakes) => {
+
+  // Create the base layers.
+  let map =  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+});
+  let satilite = L.tileLayer('http://{s}.google.com/vt/lyrs=s&x={x}&y={y}&z={z}',{
+    maxZoom: 20,
+    subdomains:['mt0','mt1','mt2','mt3']
+});
+
+  let outdoors = L.tileLayer('http://{s}.google.com/vt/lyrs=p&x={x}&y={y}&z={z}',{
+  maxZoom: 20,
+  subdomains:['mt0','mt1','mt2','mt3']
+});
+
+  // Create a baseMaps object.
+  let baseMaps = {
+    "Satellite": satilite,
+    "Default": map,
+    "Outdoors": outdoors
   };
 
-  legend.addTo(myMap)
+  // Create an overlay object to hold our overlay.
+  let overlayMaps = {
+    Earthquakes: earthquakes,
+  };
 
-});
+  // Create our map, giving it the streetmap and earthquakes layers to display on load.
+  let myMap = L.map("map", {
+    center: [
+      0,0
+    ],
+    zoom: 2,
+    layers: [map, earthquakes]
+  });
+
+  L.control.layers(baseMaps, overlayMaps, {
+    collapsed: false
+  }).addTo(myMap);
+
+  let legend = L.control ({position: 'bottomright'});
+  legend.onAdd = (myMap) => {
+
+    let div = L.DomUtil.create('div', 'info legend');
+    let altitude = [5,12,18,24,30];
+    let labels = ['Alt'];
+
+    for (let i = 0; i < altitude.length; i++) {
+      div.innerHTML +=
+      '<i style="background:' + colorInfo(altitude[i] + 1) + '">'+labels+'</i> ' +
+      altitude[i] + (altitude[i + 1] ? '&ndash;' + altitude[i + 1] + '<br>' : '+');
+    };
+      return div;
+  };
+  
+  legend.addTo(myMap);
+};
+
+  
+
+init()
